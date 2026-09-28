@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ゼミ出席管理</title>
+<style>
+:root{--bg:#fafafa;--fg:#1a1a1a;--card:#fff;--border:#e0e0e0;--accent:#2d6cdf;--muted:#666;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#141414;--fg:#eee;--card:#1e1e1e;--border:#333;--muted:#999;}}
+:root[data-theme="dark"]{--bg:#141414;--fg:#eee;--card:#1e1e1e;--border:#333;--muted:#999;}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+.wrap{max-width:560px;margin:0 auto;padding:16px;}
+h1{font-size:1.2rem;margin:8px 0 16px;}
+.tabs{display:flex;gap:8px;margin-bottom:16px;}
+.tab{flex:1;padding:10px;text-align:center;border-radius:8px;border:1px solid var(--border);cursor:pointer;background:var(--card);}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;}
+label{display:block;font-size:0.85rem;color:var(--muted);margin-bottom:4px;}
+select,input,button{width:100%;padding:9px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:1rem;margin-bottom:10px;}
+button{background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;}
+button:disabled{opacity:0.5;}
+table{width:100%;border-collapse:collapse;font-size:0.9rem;}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);}
+.msg{font-size:0.85rem;margin-bottom:8px;min-height:1em;}
+.msg.ok{color:#2e8b57;}
+.msg.err{color:#c0392b;}
+.rate{font-size:2rem;font-weight:700;}
+.overflow{overflow-x:auto;}
+.list-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.9rem;gap:8px;}
+.row-name{flex:1;word-break:break-word;}
+.row-btns{display:flex;gap:6px;flex-shrink:0;}
+.btn-sm{width:auto;padding:5px 10px;font-size:0.8rem;margin-bottom:0;}
+.btn-sm.secondary{background:var(--muted);}
+.btn-sm.danger{background:#c0392b;}
+.edit-input{width:auto;flex:1;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);margin-bottom:0;}
+.hint{color:var(--muted);font-size:0.8rem;margin-top:-6px;margin-bottom:10px;}
+.welcome{font-weight:600;margin-bottom:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📋 ゼミ出席管理</h1>
+  <div class="tabs">
+    <div class="tab active" id="tabStudent">学生用</div>
+    <div class="tab" id="tabAdmin" style="display:none;">管理者用</div>
+  </div>
+
+  <div id="viewStudent">
+    <div class="card" id="lookupCard">
+      <label>学籍番号を入力してください</label>
+      <input id="studentNumberInput" placeholder="学籍番号" autocomplete="off">
+      <button id="lookupBtn">確認する</button>
+      <div id="lookupMsg" class="msg"></div>
+    </div>
+
+    <div class="card" id="welcomeCard" style="display:none;">
+      <div class="welcome" id="welcomeText"></div>
+      <button id="logoutBtn" class="btn-sm secondary" style="width:100%;">別の学籍番号で確認する</button>
+    </div>
+
+    <div class="card" id="checkinCard" style="display:none;">
+      <div id="checkinStatus" class="msg"></div>
+      <button id="checkinBtn">本日の出席を登録する</button>
+      <div id="checkinMsg" class="msg"></div>
+    </div>
+
+    <div class="card" id="historyCard" style="display:none;">
+      <div class="rate" id="rateText">-</div>
+      <div class="hint" id="rateSub"></div>
+      <div id="absenceInfo" class="msg"></div>
+      <div class="overflow">
+        <table><thead><tr><th>日付</th><th>状態</th></tr></thead><tbody id="historyBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div id="viewAdmin" style="display:none;">
+    <div class="card">
+      <label>欠席上限の設定</label>
+      <input type="number" id="maxAbsencesInput" min="0" placeholder="例: 3">
+      <button id="saveMaxAbsencesBtn">保存</button>
+      <div class="hint">この回数を超えて欠席すると、学生の画面に警告が表示されます。</div>
+      <div id="maxAbsencesMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <label>学生を追加</label>
+      <input id="newStudentName" placeholder="氏名">
+      <input id="newStudentNumber" placeholder="学籍番号">
+      <button id="addStudentBtn">追加</button>
+      <div class="hint">学籍番号が、その学生の出席登録コード(パスワード)になります。</div>
+      <div id="addStudentList"></div>
+    </div>
+
+    <div class="card">
+      <label>手動出席登録(補講出席など)</label>
+      <select id="manualStudentSelect"><option value="">-- 学生を選択 --</option></select>
+      <select id="manualSessionSelect"><option value="">-- 対象の日付を選択 --</option></select>
+      <button id="manualMarkBtn">出席として記録する</button>
+      <button id="manualUnmarkBtn" class="btn-sm secondary" style="width:100%;">記録を取り消す(欠席に戻す)</button>
+      <div class="hint">過去の授業を欠席した学生が補講に出席した場合など、この画面から出席を穴埋めできます。</div>
+      <div id="manualMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <label>出席セッション管理</label>
+      <div id="sessionList"></div>
+      <div class="hint">セッションを作成した日に限り、学生は自分の学籍番号で出席登録できます。</div>
+      <label>新しいセッションを追加</label>
+      <input type="date" id="sessionDate">
+      <label>受付開始時刻(任意)</label>
+      <input type="time" id="sessionStart">
+      <label>受付終了時刻(任意)</label>
+      <input type="time" id="sessionEnd">
+      <div class="hint">時刻を空欄にすると、時間制限なしになります。</div>
+      <button id="saveSessionBtn">追加</button>
+      <div id="sessionMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <label>出席状況一覧</label>
+      <div class="overflow">
+        <table><thead><tr><th>名前</th><th>出席</th><th>欠席</th><th>残り</th><th>出席率</th></tr></thead><tbody id="overviewBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* スタンドアロン用: 共有DBの代わりにlocalStorageを使う簡易実装。管理者タブはURL末尾に #admin を付けた時のみ表示。 */
+(function(){
+  const KEY="attendance_db_v1";
+  const load=()=>{try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch(e){return {};}};
+  const save=s=>localStorage.setItem(KEY,JSON.stringify(s));
+  const snap=(items)=>({docs:items.map(([k,v])=>({id:k.split("/").pop(),data:()=>v})),empty:items.length===0});
+  const list=(name,filters)=>Object.entries(load()).filter(([k,v])=>k.startsWith(name+"/")&&k.split("/").length===2&&filters.every(([f,val])=>v[f]===val));
+  const coll=(name,filters=[])=>({where:(f,op,val)=>coll(name,[...filters,[f,val]]),get:async()=>snap(list(name,filters))});
+  const db={collection:name=>coll(name),doc:path=>({
+    get:async()=>{const s=load();return {exists:path in s,data:()=>s[path]};},
+    set:async d=>{const s=load();s[path]=d;save(s);},
+    update:async d=>{const s=load();s[path]={...(s[path]||{}),...d};save(s);},
+    delete:async()=>{const s=load();delete s[path];save(s);}})};
+  window.claude={use:async n=>n==="db"?db:{canEdit:()=>location.hash==="#admin"}};
+})();
+</script>
+<script>
+let db=null;
+let maxAbsences=null;
+let currentStudentId=null, currentStudentName=null;
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+
+async function initDb(){
+  try{ db = await claude.use("db"); }catch(e){ db=null; }
+  if(!db){ document.getElementById("lookupMsg").textContent="データベースに接続できません。"; document.getElementById("lookupMsg").className="msg err"; return; }
+  let canManage=false;
+  try{ const user = await claude.use("user"); canManage = user ? !!user.canEdit() : false; }catch(e){}
+  if(canManage) document.getElementById("tabAdmin").style.display="";
+  await loadMaxAbsences();
+  document.getElementById("sessionDate").value = todayStr();
+  if(canManage){ await loadOverview(); }
+}
+
+document.getElementById("tabStudent").onclick=()=>{
+  document.getElementById("tabStudent").classList.add("active");
+  document.getElementById("tabAdmin").classList.remove("active");
+  document.getElementById("viewStudent").style.display="block";
+  document.getElementById("viewAdmin").style.display="none";
+};
+document.getElementById("tabAdmin").onclick=()=>{
+  document.getElementById("tabAdmin").classList.add("active");
+  document.getElementById("tabStudent").classList.remove("active");
+  document.getElementById("viewAdmin").style.display="block";
+  document.getElementById("viewStudent").style.display="none";
+  loadOverview();
+};
+
+document.getElementById("lookupBtn").onclick = async ()=>{
+  const num = document.getElementById("studentNumberInput").value.trim();
+  const msgEl = document.getElementById("lookupMsg");
+  if(!num){ msgEl.textContent="学籍番号を入力してください。"; msgEl.className="msg err"; return; }
+  try{
+    const snap = await db.collection("students").where("studentNumber","==",num).get();
+    if(snap.empty){ msgEl.textContent="該当する学生が見つかりません。"; msgEl.className="msg err"; return; }
+    const s = snap.docs[0].data();
+    currentStudentId = s.id; currentStudentName = s.name;
+    msgEl.textContent=""; msgEl.className="msg";
+    showStudentPanel();
+  }catch(e){ msgEl.textContent="エラーが発生しました。"; msgEl.className="msg err"; }
+};
+
+document.getElementById("logoutBtn").onclick = ()=>{
+  currentStudentId=null; currentStudentName=null;
+  document.getElementById("studentNumberInput").value="";
+  document.getElementById("lookupCard").style.display="block";
+  document.getElementById("welcomeCard").style.display="none";
+  document.getElementById("checkinCard").style.display="none";
+  document.getElementById("historyCard").style.display="none";
+};
+
+async function showStudentPanel(){
+  document.getElementById("lookupCard").style.display="none";
+  document.getElementById("welcomeCard").style.display="block";
+  document.getElementById("welcomeText").textContent = `${currentStudentName} さん`;
+  document.getElementById("checkinCard").style.display="block";
+  document.getElementById("historyCard").style.display="block";
+  await refreshCheckinStatus();
+  await loadHistory(currentStudentId);
+}
+
+async function refreshCheckinStatus(){
+  const date = todayStr();
+  const statusEl = document.getElementById("checkinStatus");
+  const btn = document.getElementById("checkinBtn");
+  try{
+    const sdoc = await db.doc("sessions/"+date).get();
+    if(!sdoc.exists){ statusEl.textContent="本日のセッションはまだ設定されていません。"; btn.disabled=true; return; }
+    const sess = sdoc.data();
+    const now = new Date();
+    const nowStr = String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+    if(sess.startTime && nowStr < sess.startTime){ statusEl.textContent=`受付は${sess.startTime}からです。`; btn.disabled=true; return; }
+    if(sess.endTime && nowStr > sess.endTime){ statusEl.textContent=`受付は${sess.endTime}に終了しました。`; btn.disabled=true; return; }
+    const adoc = await db.doc("attendance/"+date+"__"+currentStudentId).get();
+    if(adoc.exists){ statusEl.textContent="本日はすでに出席登録済みです。"; btn.disabled=true; return; }
+    statusEl.textContent="本日のセッションは受付中です。"; btn.disabled=false;
+  }catch(e){ statusEl.textContent=""; btn.disabled=true; }
+}
+
+document.getElementById("checkinBtn").onclick = async ()=>{
+  const msgEl = document.getElementById("checkinMsg");
+  const date = todayStr();
+  try{
+    await db.doc("attendance/"+date+"__"+currentStudentId).set({date, studentId:currentStudentId, name:currentStudentName, timestamp: Date.now(), source:"checkin"});
+    msgEl.textContent="出席を登録しました!"; msgEl.className="msg ok";
+    await refreshCheckinStatus();
+    await loadHistory(currentStudentId);
+  }catch(e){ msgEl.textContent="エラーが発生しました。"; msgEl.className="msg err"; }
+};
+
+async function loadHistory(studentId){
+  try{
+    const sessSnap = await db.collection("sessions").get();
+    const sessions = sessSnap.docs.map(d=>d.data()).sort((a,b)=>a.date.localeCompare(b.date));
+    const attSnap = await db.collection("attendance").where("studentId","==",studentId).get();
+    const attByDate = {};
+    attSnap.docs.forEach(d=>{const a=d.data(); attByDate[a.date]=a.source||"checkin";});
+    const total = sessions.length;
+    const present = sessions.filter(s=>attByDate[s.date]).length;
+    const absent = total - present;
+    document.getElementById("rateText").textContent = total? Math.round(present/total*100)+"%" : "-";
+    document.getElementById("rateSub").textContent = `${present} / ${total} 回出席`;
+    const infoEl = document.getElementById("absenceInfo");
+    if(maxAbsences!=null){
+      const remaining = maxAbsences - absent;
+      if(remaining < 0){
+        infoEl.textContent = `欠席 ${absent}回:上限(${maxAbsences}回)を超えています。`;
+        infoEl.className = "msg err";
+      }else{
+        infoEl.textContent = `欠席 ${absent}回 / 上限${maxAbsences}回(あと${remaining}回まで欠席可能)`;
+        infoEl.className = remaining===0 ? "msg err" : "msg";
+      }
+    }else{
+      infoEl.textContent = `欠席 ${absent}回`;
+      infoEl.className = "msg";
+    }
+    document.getElementById("historyBody").innerHTML = sessions.map(s=>
+      `<tr><td>${s.date}</td><td>${attByDate[s.date] ? (attByDate[s.date]==="manual"?"✅ 出席(補講)":"✅ 出席") : "—"}</td></tr>`
+    ).join("") || "<tr><td colspan=2>まだ記録がありません</td></tr>";
+  }catch(e){}
+}
+
+async function loadMaxAbsences(){
+  try{
+    const doc = await db.doc("settings/config").get();
+    maxAbsences = doc.exists && doc.data().maxAbsences!=null ? doc.data().maxAbsences : null;
+  }catch(e){ maxAbsences=null; }
+  const el = document.getElementById("maxAbsencesInput");
+  if(el) el.value = maxAbsences!=null ? maxAbsences : "";
+}
+
+document.getElementById("saveMaxAbsencesBtn").onclick = async ()=>{
+  const val = document.getElementById("maxAbsencesInput").value;
+  const msgEl = document.getElementById("maxAbsencesMsg");
+  const n = val==="" ? null : parseInt(val,10);
+  try{
+    await db.doc("settings/config").set({maxAbsences:n});
+    maxAbsences = n;
+    msgEl.textContent="保存しました。"; msgEl.className="msg ok";
+    await loadOverview();
+  }catch(e){ msgEl.textContent="保存に失敗しました(管理者権限が必要です)。"; msgEl.className="msg err"; }
+};
+
+async function loadStudents(){
+  if(!db) return [];
+  try{
+    const snap = await db.collection("students").get();
+    const students = snap.docs.map(d=>d.data()).sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+    const msel = document.getElementById("manualStudentSelect");
+    const mcur = msel.value;
+    msel.innerHTML = '<option value="">-- 学生を選択 --</option>' + students.map(s=>`<option value="${s.id}">${s.name}</option>`).join("");
+    msel.value = mcur;
+    return students;
+  }catch(e){ return []; }
+}
+
+document.getElementById("addStudentBtn").onclick = async ()=>{
+  const name = document.getElementById("newStudentName").value.trim();
+  const num = document.getElementById("newStudentNumber").value.trim();
+  if(!name || !num) return;
+  const id = (crypto.randomUUID?crypto.randomUUID():String(Date.now()));
+  try{
+    await db.doc("students/"+id).set({id, name, studentNumber:num});
+    document.getElementById("newStudentName").value="";
+    document.getElementById("newStudentNumber").value="";
+    await loadStudents();
+    await renderStudentList();
+  }catch(e){}
+};
+
+async function renderStudentList(){
+  const snap = await db.collection("students").get();
+  const students = snap.docs.map(d=>d.data()).sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+  document.getElementById("addStudentList").innerHTML = students.map(s=>`
+    <div class="list-row" data-id="${s.id}">
+      <span class="row-name">${s.name}(${s.studentNumber||"番号未設定"})</span>
+      <span class="row-btns">
+        <button type="button" class="btn-sm edit-student">編集</button>
+        <button type="button" class="btn-sm danger del-student">削除</button>
+      </span>
+    </div>`).join("") || '<div class="hint">まだ登録されていません</div>';
+}
+
+document.getElementById("addStudentList").addEventListener("click", async (e)=>{
+  const row = e.target.closest(".list-row");
+  if(!row) return;
+  const id = row.dataset.id;
+  if(e.target.classList.contains("edit-student")){
+    const doc = await db.doc("students/"+id).get();
+    const d = doc.exists ? doc.data() : {};
+    row.style.display="block";
+    row.innerHTML = `<label>氏名</label><input type="text" class="edit-name" value="${d.name||""}">
+      <label>学籍番号</label><input type="text" class="edit-number" value="${d.studentNumber||""}">
+      <span class="row-btns" style="width:100%;">
+        <button type="button" class="btn-sm save-student" style="flex:1;">保存</button>
+        <button type="button" class="btn-sm secondary cancel-student" style="flex:1;">取消</button>
+      </span>`;
+  }else if(e.target.classList.contains("save-student")){
+    const name = row.querySelector(".edit-name").value.trim();
+    const num = row.querySelector(".edit-number").value.trim();
+    if(name){ try{ await db.doc("students/"+id).update({name, studentNumber:num}); }catch(err){} }
+    await renderStudentList(); await loadStudents();
+  }else if(e.target.classList.contains("cancel-student")){
+    await renderStudentList();
+  }else if(e.target.classList.contains("del-student")){
+    try{ await db.doc("students/"+id).delete(); }catch(err){}
+    await renderStudentList(); await loadStudents();
+  }
+});
+
+document.getElementById("manualMarkBtn").onclick = async ()=>{
+  const studentId = document.getElementById("manualStudentSelect").value;
+  const date = document.getElementById("manualSessionSelect").value;
+  const msgEl = document.getElementById("manualMsg");
+  if(!studentId || !date){ msgEl.textContent="学生と日付を選択してください。"; msgEl.className="msg err"; return; }
+  const name = document.getElementById("manualStudentSelect").selectedOptions[0].textContent;
+  try{
+    await db.doc("attendance/"+date+"__"+studentId).set({date, studentId, name, timestamp: Date.now(), source:"manual"});
+    msgEl.textContent=`${name}さんの${date}を出席として記録しました。`; msgEl.className="msg ok";
+    await loadOverview();
+  }catch(e){ msgEl.textContent="記録に失敗しました(管理者権限が必要です)。"; msgEl.className="msg err"; }
+};
+
+document.getElementById("manualUnmarkBtn").onclick = async ()=>{
+  const studentId = document.getElementById("manualStudentSelect").value;
+  const date = document.getElementById("manualSessionSelect").value;
+  const msgEl = document.getElementById("manualMsg");
+  if(!studentId || !date){ msgEl.textContent="学生と日付を選択してください。"; msgEl.className="msg err"; return; }
+  try{
+    await db.doc("attendance/"+date+"__"+studentId).delete();
+    msgEl.textContent="記録を取り消しました。"; msgEl.className="msg ok";
+    await loadOverview();
+  }catch(e){ msgEl.textContent="取り消しに失敗しました。"; msgEl.className="msg err"; }
+};
+
+document.getElementById("saveSessionBtn").onclick = async ()=>{
+  const date = document.getElementById("sessionDate").value;
+  const startTime = document.getElementById("sessionStart").value;
+  const endTime = document.getElementById("sessionEnd").value;
+  const msgEl = document.getElementById("sessionMsg");
+  if(!date){ msgEl.textContent="日付を入力してください。"; msgEl.className="msg err"; return; }
+  try{
+    await db.doc("sessions/"+date).set({date, startTime:startTime||null, endTime:endTime||null});
+    msgEl.textContent="保存しました。"; msgEl.className="msg ok";
+    document.getElementById("sessionStart").value="";
+    document.getElementById("sessionEnd").value="";
+    await renderSessionList();
+    await loadOverview();
+  }catch(e){ msgEl.textContent="保存に失敗しました(管理者権限が必要です)。"; msgEl.className="msg err"; }
+};
+
+async function renderSessionList(){
+  const snap = await db.collection("sessions").get();
+  const sessions = snap.docs.map(d=>d.data()).sort((a,b)=>b.date.localeCompare(a.date));
+  document.getElementById("sessionList").innerHTML = sessions.map(s=>{
+    const time = (s.startTime||s.endTime) ? ` (${s.startTime||"..."}〜${s.endTime||"..."})` : " (時間制限なし)";
+    return `<div class="list-row" data-date="${s.date}">
+      <span class="row-name">${s.date}${time}</span>
+      <span class="row-btns">
+        <button type="button" class="btn-sm edit-session">編集</button>
+        <button type="button" class="btn-sm danger del-session">削除</button>
+      </span>
+    </div>`;
+  }).join("") || '<div class="hint">まだセッションがありません</div>';
+  const msel = document.getElementById("manualSessionSelect");
+  const mcur = msel.value;
+  msel.innerHTML = '<option value="">-- 対象の日付を選択 --</option>' + sessions.map(s=>`<option value="${s.date}">${s.date}</option>`).join("");
+  msel.value = mcur;
+}
+
+document.getElementById("sessionList").addEventListener("click", async (e)=>{
+  const row = e.target.closest(".list-row");
+  if(!row) return;
+  const date = row.dataset.date;
+  if(e.target.classList.contains("edit-session")){
+    const doc = await db.doc("sessions/"+date).get();
+    const d = doc.exists ? doc.data() : {};
+    row.style.display="block";
+    row.innerHTML = `<div class="row-name" style="margin-bottom:6px;">${date}</div>
+      <label>受付開始時刻(任意)</label><input type="time" class="edit-start" value="${d.startTime||""}">
+      <label>受付終了時刻(任意)</label><input type="time" class="edit-end" value="${d.endTime||""}">
+      <span class="row-btns" style="width:100%;">
+        <button type="button" class="btn-sm save-session" style="flex:1;">保存</button>
+        <button type="button" class="btn-sm secondary cancel-session" style="flex:1;">取消</button>
+      </span>`;
+  }else if(e.target.classList.contains("save-session")){
+    const startTime = row.querySelector(".edit-start").value;
+    const endTime = row.querySelector(".edit-end").value;
+    try{ await db.doc("sessions/"+date).update({startTime:startTime||null, endTime:endTime||null}); }catch(err){}
+    await renderSessionList();
+  }else if(e.target.classList.contains("cancel-session")){
+    await renderSessionList();
+  }else if(e.target.classList.contains("del-session")){
+    try{ await db.doc("sessions/"+date).delete(); }catch(err){}
+    await renderSessionList(); await loadOverview();
+  }
+});
+
+async function loadOverview(){
+  try{
+    const students = await loadStudents();
+    await renderStudentList();
+    await renderSessionList();
+    const sessSnap = await db.collection("sessions").get();
+    const sessions = sessSnap.docs.map(d=>d.data());
+    const attSnap = await db.collection("attendance").get();
+    const atts = attSnap.docs.map(d=>d.data());
+    const total = sessions.length;
+    document.getElementById("overviewBody").innerHTML = students.map(s=>{
+      const present = atts.filter(a=>a.studentId===s.id).length;
+      const absent = total - present;
+      const rate = total? Math.round(present/total*100)+"%" : "-";
+      const remaining = maxAbsences!=null ? (maxAbsences - absent) : null;
+      const remainingText = remaining==null ? "-" : (remaining<0 ? `超過${-remaining}` : remaining);
+      return `<tr><td>${s.name}</td><td>${present}/${total}</td><td>${absent}</td><td>${remainingText}</td><td>${rate}</td></tr>`;
+    }).join("") || "<tr><td colspan=5>学生が登録されていません</td></tr>";
+  }catch(e){}
+}
+
+initDb();
+</script>
+</body>
+</html>
